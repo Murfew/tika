@@ -1,3 +1,41 @@
+# IFT3913 – Tâche 2 (HURLEY / MUSAPHUR)
+
+> Ce fichier documente la tâche 2. Le README original d'Apache Tika se trouve plus bas, après la section « README original d'Apache Tika ».
+
+## Étape 1 – Choix des classes
+
+Nous avons mesuré la couverture de lignes et de branches du module `tika-core` avec JaCoCo (`mvn -pl tika-core test`), en n'exécutant que les tests existants. Nous avons retenu les deux classes dont la logique non testée est la plus importante.
+
+| Classe | Lignes couvertes | Branches couvertes | Méthodes couvertes | Tests existants |
+|---|---|---|---|---|
+| `org.apache.tika.io.EndianUtils` (retenue) | 31/121 (26 %) | 10/28 (36 %) | 4/32 | 4 |
+| `org.apache.tika.utils.CharsetUtils` (retenue) | 62/81 (77 %) | 25/32 (78 %) | 5/6 | 4 |
+| `org.apache.tika.io.FilenameUtils` (écartée) | 154/175 (88 %) | 86/110 (78 %) | 13/14 | 10 |
+
+Ces deux classes ont déjà des tests, mais aucune n'est couverte à 100 %, ce qu'exige l'énoncé.
+
+### `EndianUtils`
+Aucun test existant ne couvre :
+- les lecteurs 32 et 64 bits : `readIntLE`, `readIntBE`, `readLongLE`, `readLongBE` ;
+- les lecteurs 16 bits : `readShortLE`, `readShortBE`, `readUShortLE`, `readUShortBE` ;
+- les méthodes sur tableaux d'octets : `getShortLE/BE`, `getUShortLE/BE`, `getIntLE/BE`, `getUIntLE/BE`, `getLongLE`, ainsi que `ubyteToInt` et `getUByte`.
+
+`readUE7` est seulement partiellement couverte (3 branches sur 8 non couvertes). La classe se compose surtout d'opérations arithmétiques (décalages et masques sur les octets). Ce sont des opérations pour lesquelles les opérateurs de mutation génèrent beaucoup de mutants.
+
+### `CharsetUtils`
+- `forName` : 3 branches sur 22 et 5 lignes sur 33 non couvertes. Il s'agit des chemins liés aux alias de jeux de caractères et à la gestion des erreurs.
+- `isSupported` : 3 branches sur 4 non couvertes.
+
+### `FilenameUtils` (écartée)
+Cette classe est déjà couverte à 88 % (lignes). Il reste peu d'écart à combler avec des tests générés, donc peu de mutants vivants à attendre.
+
+### Mutants vivants
+La preuve par mutants vivants sera ajoutée aux étapes 5 à 8, avec l'exécution initiale de PIT sur ces deux classes. *[À compléter]*
+
+---
+
+# README original d'Apache Tika
+
 Welcome to Apache Tika  <https://tika.apache.org/>
 =================================================
 
