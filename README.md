@@ -6,22 +6,22 @@
 
 **Méthode.** Nous avons exécuté les tests existants de `tika-core` avec JaCoCo (couverture), puis PIT 1.30.0 sur les classes candidates avec ces seuls tests (analyse de mutation initiale). Un mutant est dit « vivant » quand aucun test existant ne le tue : il est soit *survivant* (le code est exécuté, mais aucun test ne détecte le changement), soit *sans couverture* (aucun test n'exécute la ligne).
 
-**Classes retenues :** `org.apache.tika.io.EndianUtils` et `org.apache.tika.io.FilenameUtils` (module `tika-core`).
+**Classe retenue :** `org.apache.tika.io.EndianUtils` (module `tika-core`). Le sujet autorise entre une et trois classes. Nous n'en gardons qu'une, car la génération de tests avec un modèle exécuté localement sur CPU est lente (environ 1 min 30 à 3 min par requête, sans GPU) : `EndianUtils` offre déjà largement assez de matière.
 
 | Classe | Lignes couvertes | Branches couvertes | Mutants générés | Tués | Survivants | Sans couverture | Vivants au total | Score initial |
 |---|---|---|---|---|---|---|---|---|
 | `EndianUtils` (retenue) | 31/121 (26 %) | 10/28 (36 %) | 206 | 38 | 14 | 154 | 168 | 18 % |
-| `FilenameUtils` (retenue) | 154/175 (88 %) | 86/110 (78 %) | 115 | 79 | 20 | 16 | 36 | 69 % |
+| `FilenameUtils` (écartée, voir ci-dessous) | 154/175 (88 %) | 86/110 (78 %) | 115 | 79 | 20 | 16 | 36 | 69 % |
 | `CharsetUtils` (écartée) | 62/81 (77 %) | 25/32 (78 %) | 25 | 20 | 0 | 5 | 5 | 80 % |
 
-Ces deux classes ont déjà des tests (4 pour `EndianUtils`, 10 pour `FilenameUtils`), mais aucune n'est couverte à 100 %.
+`EndianUtils` a déjà des tests (4), mais n'est couverte qu'à 26 % des lignes. `FilenameUtils` (10 tests) répondait aussi au critère, mais n'a pas été retenue.
 
 ### `EndianUtils` : 168 mutants vivants
 - Seules 4 méthodes sur 32 sont exercées. Aucun test ne couvre `readIntLE/BE`, `readLongLE/BE`, `readShortLE/BE`, `readUShortLE/BE`, ni les méthodes sur tableaux d'octets `getIntLE/BE`, `getLongLE`, `getShortLE/BE`, `getUShortLE/BE`, `getUIntLE/BE`, `getUByte`, `ubyteToInt`. Ces méthodes concentrent les 154 mutants sans couverture.
 - Des mutants survivent dans des méthodes pourtant appelées par un test : `readUIntBE` (4), `readUIntLE` (3), `readUE7` (4) et `readIntME` (3). Les tests actuels les exécutent sans vérifier assez de valeurs (frontières, signe, octets de poids fort).
 - La classe est surtout faite d'opérations sur les bits (décalages, masques, additions), qui produisent beaucoup de mutants arithmétiques (`MathMutator`) et de frontières (`ConditionalsBoundaryMutator`).
 
-### `FilenameUtils` : 36 mutants vivants
+### `FilenameUtils` : 36 mutants vivants (classe écartée par manque de temps de génération)
 - Vivants dans `getEmbeddedName` (8) et `getEmbeddedPath` (8), `getSanitizedEmbeddedFileName` (5) et `getSanitizedEmbeddedFilePath` (7), `getPrefixLength` (2), `resolveWithin` (3), `getSuffixFromPath` (1), `calculateExtension` (1) et `lookupExtension` (1).
 - Ces méthodes traitent des chemins de fichiers imbriqués dans des documents : leurs branches non couvertes (par exemple 5 branches sur 8 pour `resolveWithin`) correspondent à des mutants que de nouveaux tests peuvent viser.
 

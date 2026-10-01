@@ -304,17 +304,30 @@
         <configuration>
           <targetClasses>
             <param>org.apache.tika.io.EndianUtils</param>
-            <param>org.apache.tika.io.FilenameUtils</param>
           </targetClasses>
           <targetTests>
             <param>org.apache.tika.io.EndianUtilsTest</param>
-            <param>org.apache.tika.io.FilenameUtilsTest</param>
           </targetTests>
           <outputFormats>
             <param>HTML</param>
             <param>XML</param>
           </outputFormats>
           <timestampedReports>false</timestampedReports>
+        </configuration>
+      </plugin>
+      <!-- Tâche 2, étape 2 : génération de tests avec ChatUniTest et un modèle local (Ollama) -->
+      <plugin>
+        <groupId>io.github.zju-aces-ise</groupId>
+        <artifactId>chatunitest-maven-plugin</artifactId>
+        <version>2.1.1</version>
+        <configuration>
+          <!-- Ollama n'exige pas de clé, mais le plugin en demande une -->
+          <apiKeys>ollama</apiKeys>
+          <model>codeqwen:v1.5-chat</model>
+          <url>http://localhost:11434/v1/chat/completions</url>
+          <testNumber>3</testNumber>
+          <maxRounds>3</maxRounds>
+          <thread>false</thread>
         </configuration>
       </plugin>
     </plugins>
