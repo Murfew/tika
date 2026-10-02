@@ -317,8 +317,9 @@
           <targetClasses>
             <param>org.apache.tika.io.EndianUtils</param>
           </targetClasses>
+          <!-- tests originaux (EndianUtilsTest) et tests générés par ChatUniTest (EndianUtils_*_Test) -->
           <targetTests>
-            <param>org.apache.tika.io.EndianUtilsTest</param>
+            <param>org.apache.tika.io.EndianUtils*Test</param>
           </targetTests>
           <outputFormats>
             <param>HTML</param>

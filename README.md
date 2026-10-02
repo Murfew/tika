@@ -1,7 +1,5 @@
 # IFT3913 – Tâche 2 (HURLEY / MUSAPHUR)
 
-> Ce fichier documente la tâche 2. Le README original d'Apache Tika se trouve plus bas, après la section « README original d'Apache Tika ».
-
 ## Étape 1 – Choix des classes
 
 **Méthode.** Nous avons exécuté les tests existants de `tika-core` avec JaCoCo (couverture), puis PIT 1.30.0 sur les classes candidates avec ces seuls tests (analyse de mutation initiale). Un mutant est dit « vivant » quand aucun test existant ne le tue : il est soit *survivant* (le code est exécuté, mais aucun test ne détecte le changement), soit *sans couverture* (aucun test n'exécute la ligne).
@@ -98,257 +96,70 @@ Les tests générés **compilent sans intervention** (dans notre exécution, Cha
 | 26 | `EndianUtils_readUShortBE_3_0_Test`<br>`testReadUShortBEWithBufferUnderrun` | `InvocationTargetException` au lieu de `BufferUnderrunException` (réflexion) | Appel direct de `readUShortBE` | Un seul octet dans le flux : le 2e `read()` renvoie -1. Appel par réflexion : l'exception réelle est enveloppée dans `InvocationTargetException`. Or `readUShortBE` est publique et statique : appel direct. |
 | 27 | `EndianUtils_readUShortLE_2_0_Test`<br>`testReadUShortLE_withNegativeByte` | Exception attendue, aucune levée | Attend la valeur 255 | `InputStream.read()` renvoie un octet non signé (0 à 255) : l'octet -1 est lu comme 255, pas comme fin de flux (-1 réel). (ch2<<8)+ch1 = (0<<8)+255 = 255. |
 
----
+## Étapes 5 à 8 – Analyse de mutation avec PIT
 
-# README original d'Apache Tika
+**Configuration.** `pitest-maven` 1.30.0 et `pitest-junit5-plugin` 1.2.3 dans `tika-core/pom.xml`, mutateurs par défaut, `targetClasses` = `org.apache.tika.io.EndianUtils`, `targetTests` = `org.apache.tika.io.EndianUtils*Test` (tests d'origine `EndianUtilsTest` et tests générés `EndianUtils_*_Test`).
 
-Welcome to Apache Tika  <https://tika.apache.org/>
-=================================================
+- Avant (tests d'origine seulement) : `./mvnw -pl tika-core test-compile org.pitest:pitest-maven:mutationCoverage -DexcludedTestClasses='org.apache.tika.io.EndianUtils_*' -DreportsDirectory=$PWD/tika-core/target/pit-avant`
+- Après (tests d'origine et tests générés corrigés) : `./mvnw -pl tika-core test-compile org.pitest:pitest-maven:mutationCoverage -DreportsDirectory=$PWD/tika-core/target/pit-apres`
 
-[![license](https://img.shields.io/github/license/apache/tika.svg?maxAge=2592000)](http://www.apache.org/licenses/LICENSE-2.0)
-[![Jenkins](https://img.shields.io/jenkins/s/https/ci-builds.apache.org/job/Tika/job/tika-main-jdk17.svg?maxAge=3600)](https://ci-builds.apache.org/job/Tika/job/tika-main-jdk17/)
-[![Jenkins tests](https://img.shields.io/jenkins/t/https/ci-builds.apache.org/job/Tika/job/tika-main-jdk17.svg?maxAge=3600)](https://ci-builds.apache.org/job/Tika/job/tika-main-jdk17/lastBuild/testReport/)
-[![Maven Central](https://img.shields.io/maven-central/v/org.apache.tika/tika.svg?maxAge=86400)](http://search.maven.org/#search|ga|1|g%3A%22org.apache.tika%22)
+Les rapports HTML complets sont archivés dans [`rapports-pit/avant/`](rapports-pit/avant/index.html) et [`rapports-pit/apres/`](rapports-pit/apres/index.html). GitHub affiche le code source des fichiers HTML : pour voir les rapports mis en forme, cloner le dépôt et ouvrir `index.html` dans un navigateur.
 
-Apache Tika(TM) is a toolkit for detecting and extracting metadata and structured text content from various documents using existing parser libraries.
+### Scores
 
-Tika is a project of the [Apache Software Foundation](https://www.apache.org).
+| | Mutants | Tués | Survivants | Sans couverture | **Score de mutation** | Couverture des lignes |
+|---|---|---|---|---|---|---|
+| Tests d'origine (4 tests) | 206 | 38 | 14 | 154 | **18 %** | 31/121 (26 %) |
+| + tests générés (101 tests) | 206 | 140 | 28 | 38 | **68 %** | 100/121 (83 %) |
 
-Apache Tika, Tika, Apache, the Apache feather logo, and the Apache Tika project logo are trademarks of The Apache Software Foundation.
+**Les tests générés ne détectent pas tous les mutants.** Ils tuent 102 nouveaux mutants, qui étaient tous *sans couverture* auparavant. En revanche, ils ne tuent **aucun** des 14 mutants qui survivaient déjà aux tests d'origine, et ils font apparaître 14 nouveaux survivants (du code désormais exécuté, mais dont le changement n'est pas vérifié). Aucun mutant tué auparavant n'est perdu.
 
-Quick Start
-===========
+| Mutateur | Total | Tués avant | Tués après |
+|---|---|---|---|
+| `MathMutator` (décalages, additions, `&`/`\|`) | 139 | 27 | 94 |
+| `PrimitiveReturnsMutator` (retour remplacé par 0) | 31 | 4 | 27 |
+| `NegateConditionalsMutator` | 14 | 7 | 12 |
+| `ConditionalsBoundaryMutator` (`<` devient `<=`) | 13 | 0 | 1 |
+| `IncrementsMutator` (`i++` devient `i--`) | 9 | 0 | 6 |
 
-**Parse a file in Java:**
+### Mutants détectés par les tests générés, et pourquoi
 
-```java
-import org.apache.tika.Tika;
+Le facteur commun : **les tests générés comparent la valeur exacte reconstituée à partir d'octets tous différents**. `EndianUtils` assemble des entiers par masques, décalages et additions ; toute altération de cet assemblage change le résultat, et une assertion `assertEquals` sur la valeur exacte le détecte.
 
-Tika tika = new Tika();
-String text = tika.parseToString(new File("document.pdf"));
-System.out.println(text);
-```
+- **`MathMutator` (67 nouveaux).** Exemple : dans `getIntBE`, `data[i++] & 0xFF` devient `data[i++] | 0xFF` (ligne 386) ; l'octet lu vaut alors `0xFF` (ou `-1` si l'octet est négatif), quelle que soit la donnée. Il est tué par `EndianUtils_getIntBE_23_0_Test#testGetIntBEWithNegativeNumber`, qui attend une valeur précise. De même, remplacer `b0 << 24` par `b0 >> 24` ou un `+` par un `-` produit un autre entier. À l'inverse, un test dont tous les octets valent `00` ne détecterait pas la plupart de ces mutants, puisque décaler ou additionner des zéros donne toujours zéro.
+- **`PrimitiveReturnsMutator` (23 nouveaux).** `return …;` devient `return 0;`. Ce mutant est tué dès qu'un test attend une valeur non nulle, par exemple `EndianUtils_getIntBE_22_0_Test#testGetIntBE_withValidData` (attendu `0x11223344`). Comme presque chaque méthode `get*`/`read*` a reçu au moins un test de valeur non nulle, ces mutants sont détectés.
+- **`IncrementsMutator` (6 nouveaux).** Dans `getIntBE`/`getIntLE`, `i++` devient `i--` : la méthode relit le mauvais octet (ou un indice négatif, d'où une exception). Tué par les tests de valeur sur 4 octets distincts (`EndianUtils_getIntBE_23_0_Test#testGetIntBEWithNegativeNumber`).
+- **`NegateConditionalsMutator` (5 nouveaux).** La condition de fin de flux `(ch1 | ch2 | …) < 0` est inversée : la méthode lève une exception sur un flux complet et n'en lève pas sur un flux trop court. Tué par les tests de flux trop court, par exemple `EndianUtils_readIntBE_7_0_Test#testReadIntBEBufferUnderrun` (un flux de 3 octets doit lever `BufferUnderrunException`).
+- **`ConditionalsBoundaryMutator` (1 nouveau).** Dans `getLongLE`, la condition de boucle `j >= offset` (ligne 446) devient `j > offset` : le premier octet n'est plus lu. Tué par `EndianUtils_getLongLE_28_0_Test#testGetLongLE`.
 
-**From the command line:**
+### Mutants encore vivants (66) : analyse
 
-```bash
-java -jar tika-app-*.jar --text document.pdf
-```
+| Groupe | Nombre | Cause | Comment le tuer |
+|---|---|---|---|
+| `readIntLE`, `readLongLE` sans couverture | 12 + 24 | ChatUniTest n'a produit aucun test compilable pour ces méthodes (étape 3). | Tests de valeur et de flux trop court, comme pour `readIntBE`/`readLongBE`. |
+| `readShortBE` : `return` remplacé par 0, sans couverture | 1 | Le seul test généré ne couvre que le cas où `read()` lève une `IOException`. | Un test de valeur sur 2 octets. |
+| `getUIntLE(byte[])` : `return` remplacé par 0, sans couverture | 1 | Seule la surcharge `getUIntLE(byte[], int)` est appelée. | Appeler la surcharge à un argument. |
+| Frontière `(… ) < 0` devient `<= 0` dans `readIntBE`, `readIntME`, `readLongBE`, `readUIntBE`, `readUIntLE`, `readUShortBE`, `readUShortLE` | 7 | Aucun test ne lit des octets **tous nuls** : le OU de valeurs nulles vaut 0, et seul le mutant lèverait une exception. | Un flux d'octets `00` : l'original renvoie 0, le mutant lève `BufferUnderrunException`. |
+| `\|` devient `&` dans la condition de fin de flux | 15 | Un flux standard renvoie `-1` puis toujours `-1` : le dernier octet lu vaut `-1` dès qu'il manque des données, et un OU avec `-1` reste négatif. Les mutants qui ne touchent pas le **dernier** `\|` sont donc équivalents pour un `InputStream` normal. | Le dernier `\|` de `readUIntBE` se tue avec un flux de 3 octets. Il survit parce que le test **écrit à la main** `EndianUtilsTest#testReadUIntBE` appelle par erreur `readUIntLE` dans son cas « flux trop court » (copier-coller) : la fin de flux de `readUIntBE` n'a jamais été testée. Les autres ne se tuent qu'avec un flux simulé (Mockito) qui renvoie `-1` **puis** une donnée. |
+| `getIntBE`/`getIntLE` : le dernier `i++` devient `i--` | 2 | La valeur de `i` après la dernière lecture n'est jamais utilisée. | **Mutants équivalents** : aucun test ne peut les tuer. |
+| `readUE7` (frontières et incrément, lignes 235 et 246) | 4 | Déjà survivants avec les tests d'origine ; ChatUniTest n'a pas généré de test compilable pour `readUE7`. | Un octet `00` seul (ligne 246), `81 00` (ligne 235, `>= 0`), et une suite de 7 octets de continuation (limite `read++ < 6`). |
 
-**Maven dependency:**
+Ces mutants, sauf les mutants équivalents, sont la base des tests écrits à la main de l'étape 9.
 
-```xml
-<dependency>
-    <groupId>org.apache.tika</groupId>
-    <artifactId>tika-parsers-standard-package</artifactId>
-    <version>4.x.y</version>
-    <type>pom</type>
-</dependency>
-```
+## Déclaration d'utilisation de l'IA – partie de Hurley (étapes 1, 2, 3, 5 à 8)
 
-Getting Started
-===============
-Pre-built binaries of Apache Tika standalone applications are available
-from https://tika.apache.org/download.html . Pre-built binaries of all the
-Tika jars can be fetched from Maven Central or your favourite Maven mirror.
+Cette déclaration porte sur l'IA utilisée **pour faire le travail**. Elle est distincte de l'IA **étudiée** dans la tâche (ChatUniTest avec Qwen2.5-Coder, décrite aux étapes 2 et 3).
 
-**Tika 2.X and support for Java 8 reached End of Life (EOL) in April, 2025. 
-See [Tika Roadmap 2.x, 3.x and beyond](https://cwiki.apache.org/confluence/display/TIKA/Tika+Roadmap+--+2.x%2C+3.x+and+Beyond).** 
+**Outil utilisé.** Claude Code (Anthropic), un assistant de programmation qui agit dans le terminal et l'éditeur : modèles Claude Sonnet 5.5, puis Claude Opus 5.5. Les commits auxquels il a contribué portent la mention `Co-Authored-By: Claude …`.
 
-Tika is based on **Java 17** and uses the [Maven 3](https://maven.apache.org) build system.
-**N.B.** [Docker](https://www.docker.com/products/personal) is used for tests in tika-integration-tests. If Docker is not installed, those tests are skipped.
+**Utilisation de l'IA.** L'assistant a servi d'outil d'exécution et de guide, sous ma direction. Je fixais l'objectif de chaque étape et je choisissais parmi les options proposées. Je vérifiais aussi le résultat avant de l'intégrer.
 
-To build Tika from source, use the following command in the main directory:
+Il a été utilisé pour :
+- exécuter les commandes (Maven, JaCoCo, PIT, ChatUniTest) et lire leurs rapports ;
+- installer et configurer Ollama et le plugin ChatUniTest, puis diagnostiquer les échecs de génération (classes non compilées, Mockito absent, classe imbriquée inconnue du modèle) ;
+- corriger les 27 oracles faux des tests générés et remplacer les imports en `*` (checkstyle) ;
+- classer les mutants de PIT et en expliquer les causes ;
+- rédiger une première version des sections de ce README, que j'ai relue et corrigée ;
+- proposer la suite du travail et les options possibles à chaque étape.
 
-    ./mvnw clean install
-
-The Maven wrapper (`mvnw`) is included in the repository and will automatically download
-the correct Maven version if needed. On Windows, use `mvnw.cmd` instead.
-
-The build consists of a number of components, including a standalone runnable jar that you can use to try out Tika features. You can run it like this:
-
-    java -jar tika-app/target/tika-app-*.jar --help
-
-
-To build a specific project (for example, tika-server-standard):
-
-    ./mvnw clean install -am -pl :tika-server-standard
-
-If the ossindex-maven-plugin is causing the build to fail because a dependency
-has now been discovered to have a vulnerability:
-
-    ./mvnw clean install -Dossindex.skip
-
-
-Faster Builds
-=============
-
-**Fast profile** - Use `-Pfast` to skip tests, checkstyle, and spotless:
-
-    ./mvnw clean install -Pfast
-
-**Parallel builds** - Add `-T1C` to build with 1 thread per CPU core:
-
-    ./mvnw clean install -Pfast -T1C
-
-**Maven Daemon (mvnd)** - Keeps a warm JVM running for 2-3x faster rebuilds:
-
-```bash
-# Install: https://github.com/apache/maven-mvnd
-# macOS: brew install mvndaemon/tap/mvnd
-
-# Use exactly like mvn
-mvnd clean install -Pfast
-mvnd test -pl :tika-core
-```
-
-**Combine both** for maximum speed during development:
-
-    mvnd clean install -Pfast -T1C
-
-
-Reproducible Builds
-===================
-
-Apache Tika supports [reproducible builds](https://reproducible-builds.org/). This means
-that building the same source code with the same JDK version should produce
-byte-for-byte identical artifacts, regardless of the build machine or time.
-
-Key configuration:
-- `project.build.outputTimestamp` is set in `tika-parent/pom.xml`
-- All Maven plugins are configured to produce deterministic output
-
-To verify the build plan supports reproducibility:
-
-    ./mvnw artifact:check-buildplan
-
-To verify two builds produce identical artifacts:
-
-    ./mvnw clean install -DskipTests
-    mv ~/.m2/repository/org/apache/tika tika-build-1
-    ./mvnw clean install -DskipTests
-    diff -r tika-build-1 ~/.m2/repository/org/apache/tika
-
-
-Maven Dependencies
-==================
-
-Apache Tika provides *Bill of Material* (BOM) artifact to align Tika module versions and simplify version management. 
-To avoid convergence errors in your own project, import this
-bom or Tika's parent pom.xml in your dependency management section.
-
-If you use Apache Maven:
-
-```xml
-<project>
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-       <groupId>org.apache.tika</groupId>
-       <artifactId>tika-bom</artifactId>
-       <version>4.x.y</version>
-       <type>pom</type>
-       <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
-
-  <dependencies>
-    <dependency>
-      <groupId>org.apache.tika</groupId>
-      <artifactId>tika-parsers-standard-package</artifactId>
-      <type>pom</type>
-      <!-- version not required since BOM included -->
-    </dependency>
-  </dependencies>
-</project>
-```
-
-For Gradle:
-
-```kotlin
-dependencies {
-  implementation(platform("org.apache.tika:tika-bom:4.x.y"))
-
-  // version not required since bom (platform in Gradle terms)
-  implementation("org.apache.tika:tika-parsers-standard-package@pom")
-}
-```
-
-Migrating to 4.x
-================
-TBD
-
-Contributing
-============
-See [CONTRIBUTING.md](CONTRIBUTING.md) and https://tika.apache.org/contribute.html
-
-[![contributors](https://contributors-img.web.app/image?repo=apache/tika)](https://github.com/apache/tika/graphs/contributors)
-
-Building from a Specific Tag
-============================
-Let's assume that you want to build the 3.0.1 tag:
-```
-0. Download and install hub.github.com
-1. git clone https://github.com/apache/tika.git
-2. cd tika
-3. git checkout 3.0.1
-4. ./mvnw clean install
-```
-
-If a new vulnerability has been discovered between the date of the
-tag and the date you are building the tag, you may need to build with:
-
-```
-4. ./mvnw clean install -Dossindex.skip
-```
-
-If a local test is not working in your environment, please notify
- the project at dev@tika.apache.org. As an immediate workaround,
- you can turn off individual tests with e.g.:
-
-```
-4. ./mvnw clean install -Dossindex.skip -Dtest=\!UnpackerResourceTest#testPDFImages
-```
-
-License (see also LICENSE.txt)
-==============================
-
-Collective work: Copyright 2011 The Apache Software Foundation.
-
-Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with this work for additional information regarding copyright ownership.  The ASF licenses this file to You under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
-
-<https://www.apache.org/licenses/LICENSE-2.0>
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions and limitations under the License.
-
-Apache Tika includes a number of subcomponents with separate copyright notices and license terms. Your use of these subcomponents is subject to the terms and conditions of the licenses listed in the LICENSE.txt file.
-
-Export Control
-==============
-
-This distribution includes cryptographic software.  The country in which you currently reside may have restrictions on the import, possession, use, and/or re-export to another country, of encryption software.  BEFORE using any encryption software, please  check your country's laws, regulations and policies concerning the import, possession, or use, and re-export of encryption software, to  see if this is permitted.  See <http://www.wassenaar.org/> for more information.
-
-The U.S. Government Department of Commerce, Bureau of Industry and Security (BIS), has classified this software as Export Commodity Control Number (ECCN) 5D002.C.1, which includes information security software using or performing cryptographic functions with asymmetric algorithms.  The form and manner of this Apache Software Foundation distribution makes it eligible for export under the License Exception ENC Technology Software Unrestricted (TSU) exception (see the BIS Export Administration Regulations, Section 740.13) for both object code and source code.
-
-The following provides more details on the included cryptographic software:
-
-Apache Tika uses the Bouncy Castle generic encryption libraries for extracting text content and metadata from encrypted PDF files.  See <http://www.bouncycastle.org/> for more details on Bouncy Castle.  
-
-Mailing Lists
-=============
-
-* user@tika.apache.org - About using Tika
-* dev@tika.apache.org - About developing Tika
-
-Subscribe by sending a message to `{list}-subscribe@tika.apache.org`.
-
-Issue Tracker
-=============
-
-https://issues.apache.org/jira/browse/TIKA
-
-Security
-========
-
-See [SECURITY.md](SECURITY.md) and https://tika.apache.org/security.html
+**Contrôles sur le travail de l'IA.** Chaque valeur attendue corrigée à l'étape 3 a été recalculée par une réimplémentation indépendante des formules de `EndianUtils`, sans utiliser la sortie Java. Tous les chiffres de ce README proviennent des rapports de Maven, de Surefire et de PIT (archivés dans `rapports-pit/`), et non d'estimations de l'IA. Les erreurs de l'IA repérées pendant la vérification ont été corrigées avant les commits. Par exemple : une affirmation inexacte sur les verdicts du plugin, et une commande de vérification mal décrite.
