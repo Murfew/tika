@@ -119,6 +119,18 @@
       <artifactId>junit-jupiter-engine</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Tâche 2 : les tests générés par ChatUniTest utilisent Mockito -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <version>${mockito-junit-jupiter.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -325,9 +337,11 @@
           <apiKeys>ollama</apiKeys>
           <model>codeqwen:v1.5-chat</model>
           <url>http://localhost:11434/v1/chat/completions</url>
-          <testNumber>3</testNumber>
+          <testNumber>1</testNumber>
           <maxRounds>3</maxRounds>
           <thread>false</thread>
+          <!-- prompts du plugin, légèrement modifiés (voir README) -->
+          <promptPath>${project.basedir}/chatunitest-prompts</promptPath>
         </configuration>
       </plugin>
     </plugins>

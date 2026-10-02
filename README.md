@@ -28,6 +28,16 @@
 ### Classe écartée : `CharsetUtils`
 Elle n'a que 25 mutants, dont 5 seulement sont vivants (score initial de 80 %), et aucun mutant survivant. Elle offrirait trop peu de matière pour comparer les tests générés aux tests écrits à la main.
 
+## Étape 2 – Installation de ChatUniTest et génération des tests
+
+**Configuration (`tika-core/pom.xml`).** Plugin `io.github.zju-aces-ise:chatunitest-maven-plugin` 2.1.1, relié à un modèle ouvert exécuté localement avec Ollama 0.35.0 (`http://localhost:11434/v1/chat/completions`) : `qwen2.5-coder:7b` (CPU seulement : 8 cœurs, 15 Go de RAM, pas de GPU dédié). Commandes utilisées : `./mvnw -pl tika-core io.github.zju-aces-ise:chatunitest-maven-plugin:2.1.1:class -DselectClass=EndianUtils` (premier essai, arrêté après 5 méthodes par des délais d'attente dépassés), puis `...:method -DselectMethod=EndianUtils#<méthode>` pour chacune des 18 méthodes restantes, une à la fois.
+
+Quatre ajustements ont été nécessaires :
+1. **Alias du modèle.** Le plugin n'accepte qu'une liste fermée de noms (`gpt-*`, `code-llama`, `codeqwen:v1.5-chat`). Nous avons créé l'alias Ollama `codeqwen:v1.5-chat` qui pointe vers `qwen2.5-coder:7b` (`ollama cp qwen2.5-coder:7b codeqwen:v1.5-chat`). Le modèle réellement utilisé est donc Qwen2.5-Coder 7B.
+2. **Mockito.** Les tests générés utilisent Mockito, absent de `tika-core` : `mockito-core` et `mockito-junit-jupiter` ajoutés en portée `test`.
+3. **Prompts modifiés** (`tika-core/chatunitest-prompts/`, option `promptPath`). Le plugin ne donne pas au modèle la classe imbriquée `EndianUtils.BufferUnderrunException`, et le modèle l'importait depuis un paquet inexistant dans les 3 rounds de réparation. Nous avons ajouté à `initial_system.ftl` et `repair.ftl` deux phrases : (a) `BufferUnderrunException` est une classe imbriquée de `EndianUtils`, à écrire `EndianUtils.BufferUnderrunException` ; (b) chaque méthode de test doit déclarer `throws Exception`. **Ce sont des indications que nous avons données au modèle** ; sans elles, aucun test ne compilait.
+4. **Réglages.** `testNumber=1`, `maxRounds=3`, un seul fil d'exécution. Une génération sur une seule méthode prenait de 4 à 23 minutes sur ce portable (environ 13 tokens/s en lecture de prompt) ; la génération des 18 dernières méthodes a duré 1 h 19.
+
 ---
 
 # README original d'Apache Tika
