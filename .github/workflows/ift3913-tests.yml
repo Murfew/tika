@@ -26,6 +26,6 @@ jobs:
           cache: maven
 
       - name: Build and run tika-core tests
-        run: mvn -B -pl tika-core -am test
+        run: ./mvnw -B -pl tika-core -am test
 
 
