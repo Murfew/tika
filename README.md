@@ -163,3 +163,137 @@ Il a été utilisé pour :
 - proposer la suite du travail et les options possibles à chaque étape.
 
 **Contrôles sur le travail de l'IA.** Chaque valeur attendue corrigée à l'étape 3 a été recalculée par une réimplémentation indépendante des formules de `EndianUtils`, sans utiliser la sortie Java. Tous les chiffres de ce README proviennent des rapports de Maven, de Surefire et de PIT (archivés dans `rapports-pit/`), et non d'estimations de l'IA. Les erreurs de l'IA repérées pendant la vérification ont été corrigées avant les commits. Par exemple : une affirmation inexacte sur les verdicts du plugin, et une commande de vérification mal décrite.
+
+---
+
+## Étape 4 – Analyse qualitative des tests générés et des oracles
+
+Nous avons comparé les tests générés avec ChatUniTest aux tests originaux de `EndianUtilsTest.java`.
+
+### Exemple 1 : getIntBE
+
+Le fichier `EndianUtils_getIntBE_23_0_Test.java` contient deux tests générés :
+
+- `testGetIntBEWithNegativeNumber` : les octets `FF FF FF FE` doivent produire `-2`.
+- `testGetIntBEWithZero` : quatre octets nuls doivent produire `0`.
+
+Les deux tests utilisent `assertEquals` avec des valeurs attendues exactes. Les oracles sont pertinents et spécifiques : ils vérifient le décodage binaire plutôt qu'une simple absence d'exception.
+
+Cependant, les deux scénarios utilisent un offset de zéro. Ils ne vérifient pas les offsets non nuls ni les tableaux incomplets.
+
+### Exemple 2 : readIntME
+
+Le fichier `EndianUtils_readIntME_8_0_Test.java` contient trois scénarios :
+
+| Test | Données | Oracle | Évaluation |
+|---|---|---|---|
+| `testReadIntME_Normal` | `12 34 56 78` | `assertEquals(0x34127856, result)` | Correct et précis |
+| `testReadIntME_BufferUnderrunException` | Flux vide | `assertThrows(BufferUnderrunException.class)` | Correct |
+| `testReadIntME_IOException` | Flux de trois octets | `assertThrows(BufferUnderrunException.class)` | Correct, mais nom imprécis |
+
+Le troisième nom suggère une `IOException` générale, alors que l'assertion vérifie spécifiquement une `BufferUnderrunException`.
+
+La comparaison avec le test original `testReadIntME` montre que les développeurs vérifiaient déjà des valeurs normales, des valeurs signées et un flux incomplet.
+
+ChatUniTest produit donc des oracles utiles, mais pas nécessairement une meilleure sélection de données.
+
+### Limite révélée par PIT
+
+Le mutant de la ligne 168 de `readIntME` remplace `< 0` par `<= 0`.
+
+Les tests générés ne distinguaient pas les deux conditions. Un flux normal non nul fonctionne dans les deux versions, tandis qu'un flux incomplet déclenche une exception dans les deux versions.
+
+Le cas `{0, 0, 0, 0}` est décisif : l'original retourne zéro, alors que le mutant lance une exception.
+
+Cet exemple montre qu'un oracle exact peut être correct, mais insuffisant si les données ne couvrent pas les valeurs frontières.
+
+## Étape 9 – Tests manuels supplémentaires
+
+Nous avons ajouté sept tests JUnit 5 dans :
+
+`tika-core/src/test/java/org/apache/tika/io/EndianUtilsManualTest.java`
+
+### Description des tests
+
+| Test | Intention | Données | Oracle |
+|---|---|---|---|
+| `testReadIntBEWithIncompleteStream` | Détecter un flux Big Endian incomplet | 3 octets | `assertThrows(BufferUnderrunException.class)` |
+| `testReadIntMEWithIncompleteStream` | Détecter un flux Middle Endian incomplet | 3 octets | `assertThrows(BufferUnderrunException.class)` |
+| `testReadLongBEWithIncompleteStream` | Détecter un flux long incomplet | 7 octets | `assertThrows(BufferUnderrunException.class)` |
+| `testReadIntBEWithZeroBytes` | Vérifier la frontière à zéro | `00 00 00 00` | `assertEquals(0, result)` |
+| `testReadIntMEWithZeroBytes` | Vérifier la frontière à zéro | `00 00 00 00` | `assertEquals(0, result)` |
+| `testReadIntBEWithDistinctBytes` | Vérifier l'ordre Big Endian | `01 02 03 04` | `assertEquals(0x01020304, result)` |
+| `testReadIntMEWithDistinctBytes` | Vérifier l'ordre Middle Endian | `01 02 03 04` | `assertEquals(0x02010403, result)` |
+
+Les flux de trois et sept octets permettent de vérifier le comportement lorsque les données sont insuffisantes.
+
+Les quatre octets tous nuls ciblent la frontière de la condition de fin de flux. Les octets distincts permettent de vérifier précisément l'ordre de reconstruction de l'entier.
+
+### Validation JUnit
+
+Commande utilisée :
+
+```bash
+./mvnw -pl tika-core -am \
+  -Dtest=EndianUtilsManualTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+Résultat observé : 7 tests exécutés, 0 échec, 0 erreur, `BUILD SUCCESS`.
+
+### Résultats PIT
+
+| Indicateur | Après ChatUniTest | Après tests manuels |
+|---|---:|---:|
+| Mutants générés | 206 | 206 |
+| Mutants tués | 140 | 142 |
+| Score de mutation | 67,96 % | 68,93 % |
+
+La comparaison des rapports XML a confirmé deux transitions de `SURVIVED` vers `KILLED` :
+
+1. `readIntBE`, ligne 149 : `changed conditional boundary`.
+2. `readIntME`, ligne 168 : `changed conditional boundary`.
+
+Pour ces deux méthodes, PIT remplace `< 0` par `<= 0`. Avec quatre octets nuls, la condition originale est fausse et la méthode retourne zéro. La condition mutée est vraie et déclenche `BufferUnderrunException`.
+
+Les assertions `assertEquals(0, result)` détectent donc ces mutants.
+
+Les cinq autres tests manuels vérifient des comportements pertinents, mais n'ont pas provoqué de nouvelles transitions vers `KILLED` lors de cette analyse.
+
+Le rapport est archivé dans [`rapports-pit/apres-tests-manuels/`](rapports-pit/apres-tests-manuels/index.html).
+
+## GitHub Actions – Automatisation des tests
+
+Un workflow dédié a été ajouté dans :
+
+`.github/workflows/ift3913-tests.yml`
+
+Il configure un environnement Ubuntu avec Java 17 et Maven, puis exécute les tests de `tika-core` et de ses dépendances nécessaires.
+
+Le fichier a été créé et enregistré sur la branche `adam-tache2`.
+
+La compilation et les sept tests manuels ont réussi localement. L'exécution de ce workflow dans GitHub Actions reste à confirmer après publication de la branche.
+
+Le succès local ne constitue pas une preuve d'exécution réussie dans GitHub Actions.
+
+## Déclaration d'utilisation de l'IA – Partie Adam
+
+**Outil :** ChatGPT (OpenAI, GPT-6), utilisé le 11 octobre 2026.
+
+**Utilisation :**
+
+- Explication du fonctionnement de Git, GitHub Actions, Maven, JUnit et PIT.
+- Assistance pour configurer le workflow de tests.
+- Proposition de tests manuels pour la classe `EndianUtils`.
+- Aide au diagnostic des erreurs de syntaxe Java, de licence Apache et de compilation Maven.
+- Interprétation des rapports PIT et identification des mutants survivants.
+- Comparaison qualitative des oracles des tests générés avec les tests existants.
+- Assistance à la rédaction de cette documentation.
+
+**Contrôles effectués :**
+
+Les propositions de code ont été vérifiées par compilation et exécution locale. Les sept tests JUnit ont réussi sans erreur. Les deux nouveaux mutants détectés ont été identifiés par comparaison des rapports XML de PIT, et non à partir d'une estimation de l'IA.
+
+Certaines propositions initiales ont nécessité des corrections, notamment pour la syntaxe Java, les accolades et les règles Checkstyle.
+
+L'assistance de l'IA ne remplace pas la validation expérimentale. Les membres du binôme restent responsables du code, des résultats et de la documentation remis.
