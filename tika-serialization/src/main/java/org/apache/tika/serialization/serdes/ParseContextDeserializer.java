@@ -18,7 +18,10 @@ package org.apache.tika.serialization.serdes;
 
 import static org.apache.tika.serialization.serdes.ParseContextSerializer.PARSE_CONTEXT;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -45,6 +48,8 @@ import org.apache.tika.serialization.ComponentNameResolver;
 public class ParseContextDeserializer extends JsonDeserializer<ParseContext> {
 
     private static final Logger LOG = LoggerFactory.getLogger(ParseContextDeserializer.class);
+
+    private static final String JAVA_SERIALIZED_PREFIX = "java-serialized:";
 
     /**
      * When true, refuses context-key types blocked from untrusted wire input
@@ -114,12 +119,30 @@ public class ParseContextDeserializer extends JsonDeserializer<ParseContext> {
         while (fieldNames.hasNext()) {
             String name = fieldNames.next();
             JsonNode value = contextNode.get(name);
+            // Tâche 3, vulnérabilité 2 : objet Java sérialisé (base64) accepté depuis le JSON
+            if (value.isTextual() && value.asText().startsWith(JAVA_SERIALIZED_PREFIX)) {
+                setSerializedObject(parseContext,
+                        value.asText().substring(JAVA_SERIALIZED_PREFIX.length()));
+                continue;
+            }
             checkForDuplicateContextKey(name, seenContextKeys);
             // Store as a lazy JSON config (plain mapper: the main one may be binary/Smile).
             parseContext.setJsonConfig(name, plainMapper().writeValueAsString(value));
         }
 
         return parseContext;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setSerializedObject(ParseContext parseContext, String base64)
+            throws IOException {
+        byte[] bytes = Base64.getDecoder().decode(base64);
+        try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
+            Object obj = ois.readObject();
+            parseContext.set((Class<Object>) obj.getClass(), obj);
+        } catch (ClassNotFoundException e) {
+            throw new IOException(e);
+        }
     }
 
     /**

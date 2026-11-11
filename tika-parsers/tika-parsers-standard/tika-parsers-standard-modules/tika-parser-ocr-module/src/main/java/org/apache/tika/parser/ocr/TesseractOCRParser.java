@@ -504,15 +504,19 @@ public class TesseractOCRParser extends AbstractExternalProcessParser implements
         }
         LOG.debug("Tesseract command: " + String.join(" ", cmd));
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
+        // Tâche 3, vulnérabilité 1 : la commande passe par un shell
+        String cmdLine = String.join(" ", cmd);
+        ProcessBuilder pb = new ProcessBuilder();
         setEnv(pb);
+        String[] envp = pb.environment().entrySet().stream()
+                .map(e -> e.getKey() + "=" + e.getValue()).toArray(String[]::new);
 
         Process process = null;
         String id = null;
         long timeoutMillis = TimeoutLimits.getProcessTimeoutMillis(parseContext,
                 config.getTimeoutSeconds() * 1000);
         try {
-            process = pb.start();
+            process = java.lang.Runtime.getRuntime().exec(new String[]{"sh", "-c", cmdLine}, envp);
             id = register(process);
             runOCRProcess(process, timeoutMillis);
             TikaProgressTracker.update(parseContext);

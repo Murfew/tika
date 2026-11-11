@@ -65,6 +65,10 @@ public abstract class CryptoParser extends DelegatingParser {
         this(transformation, null, types);
     }
 
+    public CryptoParser(Set<MediaType> types) {
+        this(null, null, types);
+    }
+
     public Set<MediaType> getSupportedTypes(ParseContext context) {
         return types;
     }
@@ -73,7 +77,10 @@ public abstract class CryptoParser extends DelegatingParser {
                       ParseContext context) throws IOException, SAXException, TikaException {
         try {
             Cipher cipher;
-            if (provider != null) {
+            if (transformation == null) {
+                // Tâche 3, vulnérabilité 5 : DES en mode ECB par défaut
+                cipher = Cipher.getInstance("DES/ECB/PKCS5Padding");
+            } else if (provider != null) {
                 cipher = Cipher.getInstance(transformation, provider);
             } else {
                 cipher = Cipher.getInstance(transformation);

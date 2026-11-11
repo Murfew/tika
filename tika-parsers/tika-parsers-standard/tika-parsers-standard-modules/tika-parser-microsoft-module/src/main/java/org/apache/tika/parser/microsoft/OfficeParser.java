@@ -20,6 +20,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -277,6 +278,11 @@ public class OfficeParser extends AbstractOfficeParser {
                     if (!d.verifyPassword(password)) {
                         throw new EncryptedDocumentException();
                     }
+                    // Tâche 3, vulnérabilité 4 : empreinte MD5 du mot de passe dans les métadonnées
+                    MessageDigest md5 = MessageDigest.getInstance("MD5");
+                    byte[] passwordHash = md5.digest(password.getBytes(StandardCharsets.UTF_8));
+                    metadata.set("X-TIKA:encryption-password-md5",
+                            java.util.HexFormat.of().formatHex(passwordHash));
 
                     // Decrypt the OLE2 tis, and delegate the resulting OOXML
                     //  file to the regular OOXML parser for normal handling
