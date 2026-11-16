@@ -1,4 +1,155 @@
-# IFT3913 – Tâche 2 (HURLEY / MUSAPHUR)
+# IFT3913 – HURLEY / MUSAPHUR
+
+# Tâche 3
+
+## Étapes 1 et 2 – GitHub Action Semgrep
+
+### Objectif
+
+Empêcher l'introduction de nouvelles vulnérabilités dans Tika grâce à une analyse statique automatisée dans GitHub Actions.
+
+### Implémentation
+
+Le workflow se trouve dans [.github/workflows/semgrep.yml](.github/workflows/semgrep.yml).
+
+Choix de conception :
+
+- Semgrep Community Edition 1.185.0.
+- Ensembles de règles p/java et p/security-audit.
+- Déclenchement automatique lors des push et pull requests.
+- fetch-depth: 0 pour récupérer l'historique Git.
+- baseline-commit pour détecter uniquement les nouveaux problèmes.
+- error pour faire échouer le workflow en présence de nouvelles détections.
+- Publication automatique du rapport JSON, même en cas d'échec.
+
+Pour un push, le commit précédent sert de référence. Pour une pull request, nous utilisons l'ancêtre commun avec la branche cible. Pour une nouvelle branche ou une exécution manuelle, la référence est origin/main.
+
+Les cinq modules autorisés sont analysés : tika-core, tika-serialization, OCR, PDF et Microsoft.
+
+### Validation
+
+- Sans nouvelle vulnérabilité : succès en 38 secondes.
+- Avec les vulnérabilités : échec avec huit détections bloquantes.
+- Les tests unitaires réussissent sur la branche vulnérable.
+
+Preuves :
+
+- [Exécution réussie](https://github.com/Murfew/tika/actions/runs/43911646697)
+- [Exécution en échec](https://github.com/Murfew/tika/actions/runs/43912273668)
+- [Pull Request de validation](https://github.com/Murfew/tika/pull/2)
+
+### Comparaison des rapports Semgrep
+
+Les deux analyses utilisent les mêmes règles et les mêmes modules.
+
+- Avant : 3 détections.
+- Après : 11 détections.
+- Nouvelles détections : 8.
+- Fichiers analysés : 745.
+- Règles exécutées : 89.
+
+Les huit nouvelles détections correspondent aux sept types de vulnérabilités. Le problème de validation TLS est détecté deux fois.
+
+La comparaison des rapports JSON confirme que les trois problèmes préexistants sont conservés.
+
+Rapports : [Avant](rapports-semgrep/avant.json) et [Après](rapports-semgrep/apres.json).
+
+Semgrep reste limité aux problèmes reconnus par ses règles.
+
+## Étape 5 – Rickroll dans le CI
+
+Une action composite réutilisable a été créée dans [.github/actions/rickroll/action.yml](.github/actions/rickroll/action.yml).
+
+Elle est appelée dans [ift3913-tests.yml](.github/workflows/ift3913-tests.yml) lorsque l'étape Maven des tests échoue.
+
+La condition failure() associée au résultat de l'étape des tests permet de déclencher automatiquement le Rickroll.
+
+L'action affiche un lien humoristique vers une vidéo YouTube dans les journaux et dans le résumé du workflow.
+
+### Validation du Rickroll
+
+- Tests réussis : Rickroll ignoré.
+- Test JUnit volontairement défaillant : Rickroll exécuté.
+- L'échec du build reste visible.
+
+Preuves :
+
+- [Tests réussis](https://github.com/Murfew/tika/actions/runs/43913572648)
+- [Rickroll déclenché](https://github.com/Murfew/tika/actions/runs/43914587079)
+- [Pull Request de validation](https://github.com/Murfew/tika/pull/3)
+
+Le test volontairement défaillant reste isolé dans la branche adam-rickroll-validation.
+
+## Déclaration d'utilisation de l'IA – Adam Musaphur
+
+ChatGPT (OpenAI) a été utilisé pour la création du workflow Semgrep, l'implémentation du Rickroll, le dépannage et la rédaction de la documentation.
+
+Les commandes ont été exécutées sur mon ordinateur. Les résultats présentés proviennent des analyses Semgrep et des exécutions réelles de GitHub Actions.
+
+## Étapes 3 et 4 – Vulnérabilités introduites
+
+Branche : [`tache3-vulnerabilites`](https://github.com/Murfew/tika/tree/tache3-vulnerabilites) (`main` = état « avant »). Chaque ajout est marqué `// Tâche 3, vulnérabilité N`.
+
+Analyse : Semgrep 1.185.0, règles `p/java` + `p/security-audit` (celles du workflow), sur les cinq modules du cas d'étude.
+
+**Critères de choix :** sept CWE différents détectés par sept règles distinctes, les cinq modules couverts, du code plausible à l'endroit où le défaut aurait du sens dans Tika, et un build qui passe toujours (compilation, checkstyle), pour que seul Semgrep le fasse échouer.
+
+| # | Type (CWE) | Fichier | Règle Semgrep | Ligne |
+|---|---|---|---|---|
+| 1 | Injection de commandes (CWE-78) | OCR – `TesseractOCRParser.java` | `command-injection-formatted-runtime-call` (ERROR) | 519 |
+| 2 | Désérialisation non sécurisée (CWE-502) | `tika-serialization` – `ParseContextDeserializer.java` | `object-deserialization` | 140 |
+| 3 | XXE (CWE-611) | PDF – `XFAExtractor.java` | `xmlinputfactory-possible-xxe` | 99 |
+| 4 | Hachage faible (CWE-328) | Microsoft – `OfficeParser.java` | `use-of-md5` | 282 |
+| 5 | Chiffrement faible (CWE-326) | `tika-core` – `CryptoParser.java` | `des-is-deprecated` | 82 |
+| 6 | Aléa prévisible (CWE-330) | `tika-core` – `TemporaryResources.java` | `weak-random` | 92 |
+| 7 | Certificats TLS non validés (CWE-295) | `tika-core` – `TikaInputStream.java` | `insecure-trust-manager` | 214, 218 |
+
+### 1. Injection de commandes – `TesseractOCRParser.doOCR`
+- **Pourquoi ce fichier :** c'est là que Tika lance un programme externe (`tesseract`) avec des valeurs issues de la configuration de la requête.
+- **Modification :** la liste d'arguments passée à `ProcessBuilder` est remplacée par une chaîne exécutée avec `Runtime.exec(new String[]{"sh", "-c", cmdLine})`.
+- **Vulnérabilité :** le shell interprète `;`, `|` et `$(...)`, donc une valeur comme `x; curl …|sh` lance une autre commande. Certaines valeurs ne sont pas filtrées, par exemple `setTrustedPageSeparator` ou un objet de configuration injecté grâce à la vulnérabilité 2.
+
+### 2. Désérialisation non sécurisée – `ParseContextDeserializer.readParseContext`
+- **Pourquoi ce fichier :** il convertit en objets Java le JSON reçu par `tika-server`. C'est la frontière avec les entrées non fiables.
+- **Modification :** une valeur `"java-serialized:<base64>"` est passée à `ObjectInputStream.readObject()`.
+- **Vulnérabilité :** `readObject()` instancie n'importe quelle classe du classpath avant tout contrôle de type. Une chaîne de gadgets (ysoserial) permet alors d'exécuter du code à distance. La valeur est une simple chaîne, donc elle contourne aussi le mode `restricted`.
+
+### 3. XXE – `XFAExtractor.extract`
+- **Pourquoi ce fichier :** le XML des formulaires XFA est entièrement contrôlé par l'auteur du PDF.
+- **Modification :** la fabrique durcie `XMLReaderUtils.getXMLInputFactory(context)` est remplacée par `XMLInputFactory.newFactory()`.
+- **Vulnérabilité :** par défaut, les DTD et les entités externes sont actives. Un `<!ENTITY e SYSTEM "file:///etc/passwd">` fait alors lire des fichiers du serveur et permet aussi des attaques SSRF ou « billion laughs ». Le résultat existant de cette règle dans `XMLReaderUtils.java` est un faux positif préexistant. Le nôtre est nouveau.
+
+### 4. Hachage faible – `OfficeParser.parse` (documents chiffrés)
+- **Pourquoi ce fichier :** c'est le seul endroit où le mot de passe d'un document Office est disponible en clair.
+- **Modification :** le MD5 du mot de passe est ajouté aux métadonnées (`X-TIKA:encryption-password-md5`).
+- **Vulnérabilité :** un MD5 sans sel se casse en quelques secondes. Or les métadonnées sont exposées (réponse du serveur, index, journaux), donc le mot de passe fuit presque en clair.
+
+### 5. Chiffrement faible – `CryptoParser.parse`
+- **Pourquoi ce fichier :** c'est la classe de base de Tika pour le déchiffrement, et donc l'endroit naturel d'un algorithme par défaut.
+- **Modification :** un nouveau constructeur sans transformation utilise `DES/ECB/PKCS5Padding` par défaut.
+- **Vulnérabilité :** DES n'a qu'une clé de 56 bits, cassable par force brute, et le mode ECB laisse voir la structure des données. Une valeur par défaut faible est rarement remise en question.
+
+### 6. Aléa prévisible – `TemporaryResources.createTempFile`
+- **Pourquoi ce fichier :** Tika copie presque chaque document analysé dans le répertoire temporaire partagé.
+- **Modification :** `Files.createTempFile`, qui utilise `SecureRandom` et des permissions `rw-------`, est remplacé par un nom tiré de `new Random().nextLong()` et par `Files.createFile`.
+- **Vulnérabilité :** `java.util.Random` est prévisible. Un utilisateur local peut créer le fichier d'avance (déni de service) ou y placer un lien symbolique. De plus, `createFile` applique le `umask`, ce qui rend la copie lisible par tous.
+
+### 7. Certificats TLS non validés – `TikaInputStream.get(URL)`
+- **Pourquoi ce fichier :** c'est par cette méthode que Tika télécharge un document à partir d'une URL.
+- **Modification :** pour HTTPS, nous installons un `X509TrustManager` vide et un `HostnameVerifier` qui renvoie toujours `true`.
+- **Vulnérabilité :** tout certificat est accepté, ce qui permet une attaque de l'homme du milieu : lecture du document, ou substitution par un fichier piégé (par exemple pour la vulnérabilité 3). Nous utilisons `"TLSv1.3"` pour éviter de déclencher aussi la règle `weak-ssl-context`, et garder un seul type.
+
+### Validation
+- **Semgrep :** 7 règles distinctes, 8 nouveaux résultats (la règle 7 signale deux méthodes). Trois premières versions n'étaient pas détectées (`new ProcessBuilder("sh","-c",…)`, `XMLInputFactory.newInstance()`, un `Random` dans un champ). Nous les avons ajustées aux motifs des règles sans changer la nature de la vulnérabilité.
+- **Build :** `./mvnw -pl <5 modules> -am install -DskipTests` réussit, checkstyle, spotless et forbidden-apis compris.
+- **Tests :** les suites des cinq modules passent toujours (`./mvnw … test` : 1 686 tests, 0 échec, 0 erreur). Tesseract n'est pas installé sur la machine, donc les tests OCR qui l'exécutent sont ignorés : la vulnérabilité 1 n'a pas été exécutée, seulement compilée.
+
+## Déclaration d'utilisation de l'IA – partie de Hurley (étapes 3 et 4)
+
+Claude Code (Anthropic, Claude Opus 5.5), sous ma direction : proposition du plan que j'ai validé, écriture des modifications, exécution de Semgrep, de Maven et des tests, et première version de cette section, que j'ai relue. Tous les résultats cités (règle, ligne, CWE) proviennent du rapport JSON de Semgrep. Le build et les tests ont été réellement exécutés.
+
+# Tâche 2
+
 
 ## Étape 1 – Choix des classes
 
