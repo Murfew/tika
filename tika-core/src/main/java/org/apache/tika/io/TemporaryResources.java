@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedList;
+import java.util.Random;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,8 +87,10 @@ public class TemporaryResources implements Closeable {
     public Path createTempFile(String suffix) throws IOException {
         String actualSuffix = StringUtils.isBlank(suffix) ? ".tmp" : suffix;
 
-        final Path path = tempFileDir == null ? Files.createTempFile("apache-tika-", actualSuffix) :
-                Files.createTempFile(tempFileDir, "apache-tika-", actualSuffix);
+        Path dir = tempFileDir == null ? Path.of(System.getProperty("java.io.tmpdir")) : tempFileDir;
+        // Tâche 3, vulnérabilité 6 : générateur non cryptographique pour les noms de fichiers
+        String name = "apache-tika-" + Long.toUnsignedString(new Random().nextLong()) + actualSuffix;
+        final Path path = Files.createFile(dir.resolve(name));
         addResource(() -> {
             try {
                 Files.delete(path);

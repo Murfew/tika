@@ -29,8 +29,14 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.GeneralSecurityException;
+import java.security.cert.X509Certificate;
 import java.sql.Blob;
 import java.sql.SQLException;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.TaggedInputStream;
@@ -203,6 +209,31 @@ public class TikaInputStream extends TaggedInputStream {
         return get(url, new Metadata());
     }
 
+    private static javax.net.ssl.SSLSocketFactory trustAllSocketFactory() throws IOException {
+        X509TrustManager trustAllManager = new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
+        TrustManager[] trustAll = new TrustManager[]{trustAllManager};
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLSv1.3");
+            sslContext.init(null, trustAll, new java.security.SecureRandom());
+            return sslContext.getSocketFactory();
+        } catch (GeneralSecurityException e) {
+            throw new IOException(e);
+        }
+    }
+
     public static TikaInputStream get(URL url, Metadata metadata) throws IOException {
         if ("file".equalsIgnoreCase(url.getProtocol())) {
             try {
@@ -216,6 +247,12 @@ public class TikaInputStream extends TaggedInputStream {
         }
 
         URLConnection connection = url.openConnection();
+        if (connection instanceof HttpsURLConnection) {
+            // Tâche 3, vulnérabilité 7 : aucun certificat ni nom d'hôte n'est vérifié
+            HttpsURLConnection https = (HttpsURLConnection) connection;
+            https.setSSLSocketFactory(trustAllSocketFactory());
+            https.setHostnameVerifier((hostname, session) -> true);
+        }
 
         String urlPath = url.getPath();
         int slash = urlPath.lastIndexOf('/');

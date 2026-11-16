@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.xml.namespace.QName;
+import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
@@ -32,7 +33,6 @@ import org.xml.sax.helpers.AttributesImpl;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.sax.XHTMLContentHandler;
-import org.apache.tika.utils.XMLReaderUtils;
 
 /**
  * This class offers an initial capability to
@@ -95,8 +95,9 @@ class XFAExtractor {
             //
             //As a final step, dump the merged fields and the values.
 
-            XMLStreamReader reader =
-                    XMLReaderUtils.getXMLInputFactory(context).createXMLStreamReader(xfaIs);
+            // Tâche 3, vulnérabilité 3 : fabrique StAX par défaut au lieu de XMLReaderUtils
+            XMLInputFactory factory = XMLInputFactory.newFactory();
+            XMLStreamReader reader = factory.createXMLStreamReader(xfaIs);
             while (reader.hasNext()) {
                 switch (reader.next()) {
                     case XMLStreamConstants.START_ELEMENT:
