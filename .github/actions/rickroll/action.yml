@@ -1,0 +1,14 @@
+name: Rickroll
+description: Adds humor when a test fails
+
+runs:
+  using: composite
+  steps:
+    - name: Display troubleshooting link
+      shell: bash
+      run: |
+        echo "A test failed! Here is a troubleshooting guide:"
+        echo "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        echo "### Un test a échoué !" >> "$GITHUB_STEP_SUMMARY"
+        echo "[Consulter le guide de dépannage](https://www.youtube.com/watch?v=dQw4w9WgXcQ)" >> "$GITHUB_STEP_SUMMARY"
