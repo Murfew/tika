@@ -1,0 +1,71 @@
+name: IFT3913 - Security Scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    if: github.event.deleted != true
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep
+        run: pip install semgrep==1.185.0
+
+      - name: Determine baseline
+        id: baseline
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            BASE="$BEFORE_SHA"
+          else
+            BASE="origin/main"
+          fi
+
+          BASELINE=$(git merge-base HEAD "$BASE")
+          echo "commit=$BASELINE" >> "$GITHUB_OUTPUT"
+          echo "Baseline: $BASELINE"
+
+      - name: Scan for new vulnerabilities
+        run: |
+          semgrep scan \
+            --config p/java \
+            --config p/security-audit \
+            --metrics=off \
+            --baseline-commit="${{ steps.baseline.outputs.commit }}" \
+            --error \
+            --json-output="$RUNNER_TEMP/semgrep-results.json" \
+            tika-core \
+            tika-serialization \
+            tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-ocr-module \
+            tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-pdf-module \
+            tika-parsers/tika-parsers-standard/tika-parsers-standard-modules/tika-parser-microsoft-module
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: ${{ runner.temp }}/semgrep-results.json
+          if-no-files-found: ignore
