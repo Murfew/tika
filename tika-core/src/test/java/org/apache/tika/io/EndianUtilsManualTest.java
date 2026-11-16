@@ -101,4 +101,10 @@ void testReadIntMEWithDistinctBytes() throws Exception {
                 new ByteArrayInputStream(data))
         );
     }
+
+    @Test
+    public void testRickrollValidation() {
+        assertEquals(1, 2, "Echec volontaire pour valider le Rickroll");
+    }
+
 }
